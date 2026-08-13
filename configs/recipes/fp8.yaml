@@ -1,0 +1,139 @@
+# ModelOpt 0.46.0rc0 PTQ recipe for W8A8 FP8 E4M3.
+# KV-cache quantizers are intentionally absent, so the controlled comparison uses BF16 KV.
+# Disabled entries combine ModelOpt 0.46's defaults with NVIDIA Nemotron-3 Nano 30B
+# high-precision attention/Mamba exclusions. These selectors intentionally use the
+# Transformers in-memory `model.layers` namespace observed in ModelOpt's quant summary,
+# not the source/export checkpoint's `backbone.layers` namespace.
+metadata:
+  recipe_type: ptq
+  description: W8A8 FP8 E4M3 max calibration with BF16 KV cache.
+quantize:
+  algorithm: max
+  quant_cfg:
+    - quantizer_name: '*'
+      enable: false
+    - quantizer_name: '*weight_quantizer'
+      cfg:
+        num_bits: e4m3
+        axis: null
+    - quantizer_name: '*input_quantizer'
+      cfg:
+        num_bits: e4m3
+        axis: null
+    - quantizer_name: '*block_sparse_moe.gate*'
+      enable: false
+    - quantizer_name: '*linear_attn.conv1d*'
+      enable: false
+    - quantizer_name: '*lm_head*'
+      enable: false
+    - quantizer_name: '*mixer.conv1d*'
+      enable: false
+    - quantizer_name: '*mlp.gate.*'
+      enable: false
+    - quantizer_name: '*mlp.shared_expert_gate.*'
+      enable: false
+    - quantizer_name: '*output_layer*'
+      enable: false
+    - quantizer_name: '*proj_out.*'
+      enable: false
+    - quantizer_name: '*router*'
+      enable: false
+    - quantizer_name: 'output.*'
+      enable: false
+    - quantizer_name: '*embed_vision*'
+      enable: false
+    - quantizer_name: '*vision_tower*'
+      enable: false
+    - quantizer_name: '*visual*'
+      enable: false
+    - quantizer_name: '*vision_model*'
+      enable: false
+    - quantizer_name: '*multi_modal_projector*'
+      enable: false
+    - quantizer_name: '*model.layers.5.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.5.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.5.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.5.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.12.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.12.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.12.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.12.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.19.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.19.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.19.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.19.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.26.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.26.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.26.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.26.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.33.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.33.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.33.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.33.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.42.mixer.q_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.42.mixer.k_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.42.mixer.v_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.42.mixer.o_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.4.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.4.mixer.out_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.11.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.11.mixer.out_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.18.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.18.mixer.out_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.25.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.25.mixer.out_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.32.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.32.mixer.out_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.41.mixer.in_proj*'
+      enable: false
+    - quantizer_name: '*model.layers.41.mixer.out_proj*'
+      enable: false
+    - parent_class: 'nn.BatchNorm1d'
+      quantizer_name: '*'
+      enable: false
+    - parent_class: 'nn.BatchNorm2d'
+      quantizer_name: '*'
+      enable: false
+    - parent_class: 'nn.BatchNorm3d'
+      quantizer_name: '*'
+      enable: false
+    - parent_class: 'nn.LeakyReLU'
+      quantizer_name: '*'
+      enable: false
+    - parent_class: 'nn.Embedding'
+      quantizer_name: '*'
+      enable: false
