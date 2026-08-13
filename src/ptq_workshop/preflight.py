@@ -24,7 +24,11 @@ from .config import (
 
 
 GIB = 1024**3
-SUPPORTED_COMPUTE_CAPABILITY_MAJORS = frozenset({10, 12})
+# B200/GB200 report SM100 and B300/GB300 report SM103. RTX Blackwell
+# workstations report SM120. DGX Spark is SM121 on ARM64 and is deliberately
+# outside this x86_64 workshop runtime contract.
+SUPPORTED_COMPUTE_CAPABILITY_MAJORS = frozenset({10})
+SUPPORTED_COMPUTE_CAPABILITIES = frozenset({(12, 0)})
 
 
 class PreflightError(RuntimeError):
@@ -121,10 +125,13 @@ def parse_compute_capability(value: str | int | float | Sequence[int]) -> tuple[
 
 def is_supported_compute_capability(value: str | int | float | Sequence[int]) -> bool:
     try:
-        major, _ = parse_compute_capability(value)
+        capability = parse_compute_capability(value)
     except (TypeError, ValueError):
         return False
-    return major in SUPPORTED_COMPUTE_CAPABILITY_MAJORS
+    return (
+        capability[0] in SUPPORTED_COMPUTE_CAPABILITY_MAJORS
+        or capability in SUPPORTED_COMPUTE_CAPABILITIES
+    )
 
 
 def _number(value: str, cast: Callable[[float], Any]) -> Any:

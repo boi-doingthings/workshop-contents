@@ -17,7 +17,7 @@ and reload through the same TensorRT-LLM runtime.
   `33d05b0c446f528914173041057050f6d135fbf4`
 - Calibration corpus: deterministic, hashed CNN/DailyMail rows
 - Seed: `42`
-- Primary deployment: one Blackwell GPU, TP=1, BF16 KV cache
+- Primary deployment: one B200 or B300 Blackwell GPU, TP=1, BF16 KV cache
 
 The exact resolved Python environment is written to `pip-freeze.txt` by bootstrap and copied into
 every run manifest. Credentials are never written to artifacts.
@@ -55,7 +55,7 @@ The `.venv` is deliberately created inside the pinned container with Python 3.12
 stack. Do not run `.venv/bin/python` directly on the host or install packages into it from the host;
 execute workshop commands through `scripts/container.sh` as shown below.
 
-For the B200 rehearsal:
+For the B200 or B300 rehearsal (the historical profile name remains `WORKSHOP_B200`):
 
 ```bash
 PTQ_GPU_ID=0 ./scripts/prepare_assets.sh WORKSHOP_B200
@@ -74,11 +74,12 @@ weights with the corresponding packed FP8/NVFP4 tensors dequantized by ModelOpt 
 | Profile | Calibration | Accuracy subset | Performance repeats | Purpose |
 |---|---:|---:|---:|---|
 | `DEV_SMOKE` | 16 | small fixed MMLU-Pro/GSM8K | 1 shortened repeat | End-to-end RTX PRO 6000 development gate |
-| `WORKSHOP_B200` | 128 | 300 MMLU-Pro + 100 GSM8K | 3, up to 5 on CV >5% | 90-minute single-B200 instructor run |
+| `WORKSHOP_B200` | 128 | 300 MMLU-Pro + 100 GSM8K | 3, up to 5 on CV >5% | 90-minute single-B200/B300 instructor run |
 | `FULL` | 128 | 1,000 MMLU-Pro + 250 GSM8K | 3, up to 5 | Post-workshop analysis |
 
 Every result records its GPU UUID and model. RTX PRO 6000 development measurements are never
-presented as B200 results.
+presented as B200 or B300 results, and results from one data-center SKU are never relabeled as the
+other.
 
 ## Experiment controls
 
@@ -151,7 +152,9 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
 ## Troubleshooting
 
 - **Preflight rejects the GPU:** NVFP4 is native only on Blackwell. B200 reports compute capability
-  10.x; RTX PRO 6000 Blackwell reports 12.0. RTX 6000 Ada is unsupported.
+  10.0, B300 reports 10.3, and RTX PRO 6000 Blackwell reports 12.0. The runtime accepts data-center
+  Blackwell 10.x and RTX Blackwell 12.0; DGX Spark 12.1 and RTX 6000 Ada 8.9 are intentionally out
+  of scope. See NVIDIA's [CUDA GPU compute-capability table](https://developer.nvidia.com/cuda/gpus).
 - **Disk gate fails:** point `HF_HOME` at a persistent volume with enough space before bootstrap.
   The project does not delete unrelated data.
 - **PTQ OOM:** `DEV_SMOKE` may retry the documented ModelOpt low-memory path when compatible.
@@ -168,3 +171,4 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
 - [TensorRT-LLM quantization support](https://nvidia.github.io/TensorRT-LLM/latest/features/quantization.html)
 - [TensorRT-LLM benchmarking](https://nvidia.github.io/TensorRT-LLM/1.3.0rc21/commands/trtllm-bench.html)
 - [NVIDIA NVFP4 format](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/nvfp4/nvfp4.html)
+- [NVIDIA CUDA GPU compute capability table](https://developer.nvidia.com/cuda/gpus)

@@ -1,11 +1,11 @@
-# Single-B200 workshop runbook
+# Single-B200/B300 workshop runbook
 
 ## Before the session
 
-1. Confirm the selected B200 is idle, healthy, and visible to Docker.
+1. Confirm the selected B200 or B300 is idle, healthy, and visible to Docker.
 2. Confirm at least 145 GiB is free on the persistent model/artifact volume.
 3. Run `./scripts/bootstrap.sh` and `./scripts/prepare_assets.sh WORKSHOP_B200`.
-4. Run the `DEV_SMOKE` profile or an abbreviated B200 smoke pass after any driver/container change.
+4. Run the `DEV_SMOKE` profile or an abbreviated target-GPU smoke pass after any driver/container change.
 5. Do not generate or copy FP8/NVFP4 checkpoints or result files into the workshop run directory.
 
 The preparation manifest must say `"download_only": true`. The instructor should retain a separate
@@ -29,7 +29,7 @@ input to the live run.
 
 ## Result validity gates
 
-- The manifest identifies a single B200 and TP=1.
+- The manifest identifies exactly one B200 or B300, records compute capability 10.x, and uses TP=1.
 - Both quantized artifacts cite the pinned BF16 revision and have identical exclusions.
 - Headline variants report no KV quantization.
 - All scale probes are finite and deterministic smoke responses are nonempty.

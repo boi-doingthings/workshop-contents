@@ -295,6 +295,8 @@ def test_workshop_notebook_is_static_and_compilable():
         "DEV_SMOKE",
         "WORKSHOP_B200",
         "FULL",
+        "B300",
+        "SM103",
         "quantize_variant.py",
         "evaluate_variant.py",
         "benchmark_variant.py",

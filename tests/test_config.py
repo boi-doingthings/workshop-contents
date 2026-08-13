@@ -75,3 +75,11 @@ def test_bootstrap_installs_verified_modelopt_source_non_editably() -> None:
     assert 'pip install --no-deps --force-reinstall "${MODELOPT_DIR}"' in bootstrap
     assert 'pip install --no-deps -e "${MODELOPT_DIR}"' not in bootstrap
     assert "Mixed ModelOpt namespace" in bootstrap
+
+
+def test_bootstrap_uses_shared_b200_b300_hardware_gate() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bootstrap = (root / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
+    assert "from ptq_workshop.preflight import is_supported_compute_capability" in bootstrap
+    assert "assert is_supported_compute_capability(capability)" in bootstrap
+    assert "torch.cuda.get_device_capability(0) in {(10, 0), (12, 0)}" not in bootstrap

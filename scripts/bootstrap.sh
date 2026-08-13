@@ -37,8 +37,13 @@ from modelopt.recipe import load_recipe
 from modelopt.torch.export import unified_export_hf
 from modelopt.torch.opt import config_loader
 from modelopt.torch.quantization.plugins import huggingface as modelopt_hf_plugin
+from ptq_workshop.preflight import is_supported_compute_capability
 assert torch.cuda.is_available(), "CUDA is not visible inside the pinned container"
-assert torch.cuda.get_device_capability(0) in {(10, 0), (12, 0)}, "A Blackwell GPU is required"
+capability = torch.cuda.get_device_capability(0)
+assert is_supported_compute_capability(capability), (
+    f"Unsupported GPU compute capability {capability}; "
+    "requires B200/B300/GB200/GB300 10.x or RTX Blackwell 12.0"
+)
 assert transformers.__version__ == "5.5.4"
 assert tensorrt_llm.__version__ == "1.3.0rc17"
 assert datasets.__version__ == "3.1.0"
