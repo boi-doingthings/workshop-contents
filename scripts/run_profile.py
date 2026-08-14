@@ -661,9 +661,46 @@ def run_runtime(
                 ).strip()
             except (KeyError, IndexError, TypeError):
                 smoke_observed = None
+            diagnostic_payload = None
+            diagnostic_response = None
+            diagnostic_error = None
+            if smoke_observed != SMOKE_RESPONSE_SENTINEL:
+                diagnostic_payload = {
+                    **smoke_payload,
+                    "skip_special_tokens": False,
+                }
+                try:
+                    diagnostic_response = request_json(
+                        f"{server_config.base_url}/v1/chat/completions",
+                        payload=diagnostic_payload,
+                        timeout_s=300.0,
+                    )
+                except Exception as exc:  # Preserve the primary mismatch and diagnostic.
+                    diagnostic_error = f"{type(exc).__name__}: {exc}"
+            smoke_path = (
+                layout.run_dir
+                / "metrics"
+                / f"{variant}-{runtime_label}-smoke.json"
+            )
+            write_derived_json_atomic(
+                smoke_path,
+                {
+                    "precision": variant,
+                    "request": smoke_payload,
+                    "response": smoke_response,
+                    "expected_text": SMOKE_RESPONSE_SENTINEL,
+                    "observed_text": smoke_observed,
+                    "exact_match": smoke_observed == SMOKE_RESPONSE_SENTINEL,
+                    "raw_token_diagnostic": {
+                        "request": diagnostic_payload,
+                        "response": diagnostic_response,
+                        "error": diagnostic_error,
+                    },
+                },
+            )
             smoke_text = require_exact_smoke_response(smoke_response, variant=variant)
             write_derived_json_atomic(
-                layout.run_dir / "metrics" / f"{variant}-{runtime_label}-smoke.json",
+                smoke_path,
                 {
                     "precision": variant,
                     "request": smoke_payload,

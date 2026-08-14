@@ -131,19 +131,28 @@ def server_config_for_workshop(
 ) -> TensorRTLLMServerConfig:
     """Build the canonical hardware-specific TensorRT-LLM launch contract.
 
-    SM120 uses the native PyTorch backend because rc17's AutoDeploy
-    ``trtllm_gen`` FP4 path fails before readiness on RTX Blackwell.  The
-    native CUTEDSL policy selects FlashInfer B12x for NVFP4 and a documented
-    CUTLASS fallback for the other two precisions.  SM100/SM103 retain the
-    original AutoDeploy path used for the B200/B300 workshop.
+    SM120 uses the working AutoDeploy path for BF16/FP8.  NVFP4 alone falls
+    back to native PyTorch because rc17's AutoDeploy ``trtllm_gen`` FP4 path
+    fails before readiness on RTX Blackwell.  Native CUTLASS accepts and pads
+    Nemotron's 1,856-wide experts, while the exact smoke gate still fails
+    closed on invalid output.  SM100/SM103 use the original AutoDeploy path
+    for every precision in the B200/B300 workshop.
     """
 
     profile_name = getattr(workshop_config.profile.name, "value", workshop_config.profile.name)
     if precision not in {"bf16", "fp8", "nvfp4"}:
         raise ValueError(f"Unknown precision: {precision}")
     if compute_capability == (12, 0):
-        backend = "pytorch"
-        yaml_name = "nano_v3_native_sm120.yaml"
+        if precision == "nvfp4":
+            backend = "pytorch"
+            yaml_name = "nano_v3_native_sm120.yaml"
+        else:
+            backend = "_autodeploy"
+            yaml_name = (
+                "nano_v3_dev.yaml"
+                if profile_name == "DEV_SMOKE"
+                else "nano_v3_b200.yaml"
+            )
     elif compute_capability[0] == 10:
         backend = "_autodeploy"
         yaml_name = "nano_v3_dev.yaml" if profile_name == "DEV_SMOKE" else "nano_v3_b200.yaml"

@@ -1,6 +1,10 @@
 # TensorRT-LLM 1.3.0rc17 native PyTorch backend for RTX Blackwell SM120.
-# CUTEDSL resolves to the hybrid CUTLASS-prefill / FlashInfer B12x decode MoE
-# for NVFP4; BF16 and per-tensor FP8 fall back explicitly to CUTLASS.
+# The explicit CUTLASS MoE accepts BF16, per-tensor FP8, and NVFP4 on SM120 and
+# loads Nemotron's 1,856-wide experts by padding internally. TensorRT-LLM
+# 1.3.0rc17 can still emit invalid NVFP4 tokens for this shape; the mandatory
+# exact-generation gate preserves the checkpoint and marks runtime metrics
+# unavailable instead of substituting fake-quant timings. FlashInfer B12x
+# rejects the shape because 1,856 is not a multiple of 128.
 max_batch_size: 32
 max_num_tokens: 2048
 max_seq_len: 8192
@@ -13,4 +17,4 @@ kv_cache_config:
   free_gpu_memory_fraction: 0.82
   enable_block_reuse: false
 moe_config:
-  backend: CUTEDSL
+  backend: CUTLASS

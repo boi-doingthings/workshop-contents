@@ -273,6 +273,15 @@ def test_runtime_smoke_failure_records_observed_text(tmp_path: Path, monkeypatch
     assert status["available"] is False
     assert status["stage"] == "smoke"
     assert status["smoke_observed"] == "nonempty diagnostic gibberish"
+    smoke = json.loads(
+        (layout.run_dir / "metrics" / "fp8-evaluate-smoke.json").read_text()
+    )
+    assert smoke["exact_match"] is False
+    assert smoke["raw_token_diagnostic"]["request"]["skip_special_tokens"] is False
+    assert (
+        smoke["raw_token_diagnostic"]["response"]["choices"][0]["message"]["content"]
+        == "nonempty diagnostic gibberish"
+    )
 
 
 def test_runtime_success_records_available_only_after_exact_smoke(

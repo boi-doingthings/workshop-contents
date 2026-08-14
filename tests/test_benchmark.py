@@ -163,7 +163,7 @@ def test_workshop_server_config_selects_profile_yaml_and_revision(tmp_path):
     assert config.speculative_decoding is False
 
 
-def test_rtx_blackwell_uses_native_sm120_runtime_for_every_precision(tmp_path):
+def test_rtx_blackwell_uses_autodeploy_then_native_nvfp4_fallback(tmp_path):
     workshop = SimpleNamespace(
         project_root=tmp_path,
         model_id="nvidia/model",
@@ -176,10 +176,16 @@ def test_rtx_blackwell_uses_native_sm120_runtime_for_every_precision(tmp_path):
         )
         for precision in ("bf16", "fp8", "nvfp4")
     ]
-    assert {config.backend for config in configs} == {"pytorch"}
-    assert {
-        Path(config.config_path).name for config in configs if config.config_path is not None
-    } == {"nano_v3_native_sm120.yaml"}
+    assert [config.backend for config in configs] == [
+        "_autodeploy",
+        "_autodeploy",
+        "pytorch",
+    ]
+    assert [Path(config.config_path).name for config in configs] == [
+        "nano_v3_dev.yaml",
+        "nano_v3_dev.yaml",
+        "nano_v3_native_sm120.yaml",
+    ]
 
 
 def test_server_manifest_records_controlled_optimization_policy(tmp_path):

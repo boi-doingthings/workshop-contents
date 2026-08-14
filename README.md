@@ -187,9 +187,13 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
 - **PTQ OOM:** `DEV_SMOKE` may retry the documented ModelOpt low-memory path when compatible.
   Workshop dimensions and formats are never silently changed.
 - **No NVFP4 performance:** inspect the saved runtime-status JSON and linked server log. On RTX PRO
-  6000 (SM120), rc17 uses the native PyTorch backend with CUTEDSL, which selects the hybrid
-  CUTLASS-prefill/FlashInfer B12x NVFP4 MoE path. B200/B300 retain AutoDeploy. A valid export is
-  retained, but fake-quant timing is never substituted for a missing native kernel.
+  6000 (SM120), BF16 and FP8 stay on the validated AutoDeploy path; NVFP4 alone uses native PyTorch
+  with CUTLASS because rc17 AutoDeploy fails before readiness for FP4. The B12x path is not used
+  because this model's 1,856-wide experts are not a multiple of its 128-value tile. In the validated
+  rc17/SM120 run, CUTLASS loaded the packed checkpoint but generated only `<unk>` tokens; the smoke
+  artifact repeats the request with special-token filtering disabled so this is visible. B200/B300
+  use AutoDeploy for all precisions. A valid export is retained, but fake-quant timing is never
+  substituted for a missing native kernel or used to claim a cross-backend speedup.
 - **Hub throttling:** export `HF_TOKEN`; manifests record only a Boolean indicating its presence.
 
 ## Primary references
