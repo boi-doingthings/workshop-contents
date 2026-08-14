@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -162,6 +163,25 @@ def test_workshop_server_config_selects_profile_yaml_and_revision(tmp_path):
     assert config.speculative_decoding is False
 
 
+def test_rtx_blackwell_uses_native_sm120_runtime_for_every_precision(tmp_path):
+    workshop = SimpleNamespace(
+        project_root=tmp_path,
+        model_id="nvidia/model",
+        model_revision="revision",
+        profile=SimpleNamespace(name=SimpleNamespace(value="DEV_SMOKE")),
+    )
+    configs = [
+        server_config_for_workshop(
+            workshop, precision=precision, compute_capability=(12, 0)
+        )
+        for precision in ("bf16", "fp8", "nvfp4")
+    ]
+    assert {config.backend for config in configs} == {"pytorch"}
+    assert {
+        Path(config.config_path).name for config in configs if config.config_path is not None
+    } == {"nano_v3_native_sm120.yaml"}
+
+
 def test_server_manifest_records_controlled_optimization_policy(tmp_path):
     config = TensorRTLLMServerConfig(model="checkpoint")
     target = save_server_manifest(config, tmp_path / "server.json")
@@ -169,6 +189,8 @@ def test_server_manifest_records_controlled_optimization_policy(tmp_path):
     assert payload["controlled_optimization_policy"] == {
         "kv_cache_dtype": "auto",
         "prefix_cache_reuse": False,
+        "runtime_backend": "_autodeploy",
+        "runtime_config": None,
         "speculative_decoding": False,
     }
     assert payload["launcher"] == {

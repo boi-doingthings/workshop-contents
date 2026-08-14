@@ -28,7 +28,7 @@ def test_profiles_match_workshop_contract() -> None:
         100,
     )
     assert (full.calibration_samples, full.mmlu_samples, full.gsm8k_samples) == (128, 1000, 250)
-    assert all(profile.minimum_free_disk_gib == 145 for profile in (dev, workshop, full))
+    assert all(profile.initial_uncached_capacity_gib == 145 for profile in (dev, workshop, full))
     assert workshop.model_id == MODEL_ID
     assert workshop.model_revision == MODEL_REVISION
     assert workshop.seed == 42

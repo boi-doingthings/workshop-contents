@@ -55,14 +55,17 @@ def test_marker_must_match_profile_model_and_revision() -> None:
         name=SimpleNamespace(value="DEV_SMOKE"),
         model_id=MODEL_ID,
         model_revision=MODEL_REVISION,
-        minimum_free_disk_gib=145,
     )
     marker = {
         "passed": True,
         "profile": "DEV_SMOKE",
         "model_id": MODEL_ID,
         "model_revision": MODEL_REVISION,
-        "minimum_free_disk_gib": 145,
+        "storage_budget": {
+            "passed": True,
+            "cache_state": "download_required",
+            "minimum_free_disk_gib": 70,
+        },
     }
     assert module.marker_matches(marker, profile)
     assert not module.marker_matches({**marker, "model_revision": "wrong"}, profile)

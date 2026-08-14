@@ -34,8 +34,11 @@ would make this Nemotron checkpoint non-exportable.
 
 ## Quick start
 
-The host needs Linux, Docker with NVIDIA Container Toolkit, an accessible Blackwell GPU, and at
-least 145 GiB free in the project/cache filesystem. B200 and B300 both use the
+The host needs Linux, Docker with NVIDIA Container Toolkit, and an accessible Blackwell GPU. Disk
+checks are operation-scoped: an absent BF16 snapshot needs 70 GiB for download, a verified cached
+snapshot needs only 2 GiB to refresh profile-specific datasets, and a fresh FP8+NVFP4 export pair
+needs 55 GiB. Existing valid packed checkpoints are credited on resume; `--fresh` credits only the
+exact run directory it will replace. B200 and B300 both use the
 `WORKSHOP_B200` profile (the profile name records the original workshop target); RTX PRO 6000 uses
 `DEV_SMOKE` for development validation. The model is public; `HF_TOKEN` is optional but recommended
 to avoid Hub rate limits.
@@ -45,10 +48,25 @@ git clone https://github.com/boi-doingthings/workshop-contents.git
 cd workshop-contents
 ./scripts/bootstrap.sh
 ./scripts/prepare_assets.sh DEV_SMOKE       # downloads only; no PTQ or results
-./scripts/launch_notebook.sh
+./scripts/launch_notebook.sh --profile DEV_SMOKE --dry-run --resume --port 8888
 ```
 
 Open `notebooks/blackwell_ptq_workshop.ipynb` with the **Blackwell PTQ (pinned)** kernel.
+
+For the instructor's live RTX run, use:
+
+```bash
+# Reuse valid quantized checkpoints, but regenerate requested metrics/predictions.
+./scripts/launch_notebook.sh --profile DEV_SMOKE --live --resume --port 8888
+
+# Or replace the one matching run from the setup cell, then execute every PTQ step live.
+./scripts/launch_notebook.sh --profile DEV_SMOKE --live --fresh --port 8888
+```
+
+Jupyter binds only to the machine's loopback interface and prints a tokenized URL. From a local
+workstation, forward it with `ssh -N -L 8888:127.0.0.1:8888 <user>@<host>`. Code Server on port
+8080 remains a convenient artifact browser/editor; notebook execution stays in Jupyter's pinned
+container kernel. Forward both ports if you want both interfaces.
 
 The `.venv` is deliberately created inside the pinned container with Python 3.12 and
 `--system-site-packages`, so it can inherit the image's CUDA, PyTorch, TensorRT-LLM, and Transformers
@@ -63,9 +81,10 @@ PTQ_GPU_ID=0 ./scripts/container.sh bash -lc \
   'source .venv/bin/activate && python scripts/run_profile.py --profile WORKSHOP_B200 --stage all'
 ```
 
-Preparation downloads only the BF16 source and frozen datasets. `WORKSHOP_B200` creates a fresh,
-timestamped run and performs quantization, validation, accuracy, performance, telemetry, and
-reporting live. Fresh PTQ stages also persist total wall time, ModelOpt-reported calibration/export
+Preparation downloads only the BF16 source and frozen datasets. The instructor notebook uses a
+deterministic run fingerprint and performs quantization, validation, accuracy, performance,
+telemetry, and reporting live; `--fresh` resets that matching run once, while `--resume` validates
+and reuses its exports. Fresh PTQ stages also persist total wall time, ModelOpt-reported calibration/export
 durations, raw NVML samples, and peak VRAM. The analysis stage compares representative BF16 source
 weights with the corresponding packed FP8/NVFP4 tensors dequantized by ModelOpt itself.
 
@@ -121,11 +140,16 @@ result. See the [official NVFP4 model card](https://huggingface.co/nvidia/NVIDIA
 
 ## Artifacts
 
-Each `artifacts/runs/<run-id>/` contains immutable configuration/environment manifests, resolved
+Each `artifacts/runs/<run-id>/` contains immutable configuration manifests, refreshed environment
+observations, resolved
 recipes, PTQ logs, packed checkpoints, raw predictions, benchmark JSON, NVML CSV, figures,
 `summary.csv`, and `summary.json`. The report is regenerated solely from those machine-readable
-files. Matching fingerprints are resumable for development; workshop runs intentionally receive a
-new ID.
+files. The instructor notebook uses one deterministic run per experiment fingerprint. Resume mode
+validates and reuses packed checkpoints while replacing retryable predictions, telemetry and
+reports. Fresh mode performs one guarded whole-run reset after verifying the manifest and projected
+free-plus-reclaimable capacity; it never deletes unrelated runs or overwrites checkpoint files in
+place. Frozen inputs live under `artifacts/prepared/<profile>/`, preventing a DEV_SMOKE subset from
+being consumed accidentally by WORKSHOP_B200.
 
 The `manifests/<precision>-ptq-observability.json` files retain quantization wall time, parsed
 calibration/export timing, peak VRAM, and links to raw quantization telemetry. The
@@ -137,7 +161,8 @@ in place for diagnosis.
 After saving the executed workshop notebook, archive it without rerunning any cells:
 
 ```bash
-.venv/bin/python scripts/archive_notebook.py --run-dir artifacts/runs/<run-id>
+./scripts/container.sh bash -lc \
+  'source .venv/bin/activate && python scripts/archive_notebook.py --run-dir artifacts/runs/<run-id>'
 ```
 
 This creates a hash-addressed notebook and execution manifest in `<run-id>/notebooks/`. Partial or
@@ -155,12 +180,16 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
   10.0, B300 reports 10.3, and RTX PRO 6000 Blackwell reports 12.0. The runtime accepts data-center
   Blackwell 10.x and RTX Blackwell 12.0; DGX Spark 12.1 and RTX 6000 Ada 8.9 are intentionally out
   of scope. See NVIDIA's [CUDA GPU compute-capability table](https://developer.nvidia.com/cuda/gpus).
-- **Disk gate fails:** point `HF_HOME` at a persistent volume with enough space before bootstrap.
-  The project does not delete unrelated data.
+- **Disk check fails:** inspect the recorded `storage_plan`. Missing source, cached preparation,
+  fresh exports, and results-only resumes have separate budgets. Point `HF_HOME` at a persistent
+  volume if the 70 GiB source-download budget is unavailable. The project does not delete unrelated
+  data.
 - **PTQ OOM:** `DEV_SMOKE` may retry the documented ModelOpt low-memory path when compatible.
   Workshop dimensions and formats are never silently changed.
-- **No NVFP4 performance:** a valid export is retained, but fake-quant timing is never substituted
-  for missing real runtime kernels.
+- **No NVFP4 performance:** inspect the saved runtime-status JSON and linked server log. On RTX PRO
+  6000 (SM120), rc17 uses the native PyTorch backend with CUTEDSL, which selects the hybrid
+  CUTLASS-prefill/FlashInfer B12x NVFP4 MoE path. B200/B300 retain AutoDeploy. A valid export is
+  retained, but fake-quant timing is never substituted for a missing native kernel.
 - **Hub throttling:** export `HF_TOKEN`; manifests record only a Boolean indicating its presence.
 
 ## Primary references
@@ -169,6 +198,8 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
 - [ModelOpt quantization guide](https://nvidia.github.io/Model-Optimizer/guides/1_quantization.html)
 - [Unified Hugging Face checkpoint deployment](https://nvidia.github.io/Model-Optimizer/deployment/3_unified_hf.html)
 - [TensorRT-LLM quantization support](https://nvidia.github.io/TensorRT-LLM/latest/features/quantization.html)
+- [TensorRT-LLM 1.3.0rc17 release notes](https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v1.3.0rc17)
+- [TensorRT-LLM SM120/SM121 NVFP4 MoE implementation](https://github.com/NVIDIA/TensorRT-LLM/pull/13773)
 - [TensorRT-LLM benchmarking](https://nvidia.github.io/TensorRT-LLM/1.3.0rc21/commands/trtllm-bench.html)
 - [NVIDIA NVFP4 format](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/nvfp4/nvfp4.html)
 - [NVIDIA CUDA GPU compute capability table](https://developer.nvidia.com/cuda/gpus)

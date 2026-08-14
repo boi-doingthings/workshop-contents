@@ -9,6 +9,7 @@ from ptq_workshop.artifacts import (
     recipe_digests,
     require_checkpoint_validation,
     run_fingerprint,
+    reset_run,
     sha256_file,
     write_derived_json_atomic,
     write_json_atomic,
@@ -54,6 +55,32 @@ def test_initialize_writes_immutable_manifest(tmp_path: Path) -> None:
     assert initialize_run(config).run_dir == layout.run_dir
     with pytest.raises(FileExistsError):
         write_json_atomic(layout.manifest_path, {"different": True})
+
+
+def test_reset_run_deletes_only_exact_matching_run(tmp_path: Path) -> None:
+    _recipes(tmp_path)
+    config = make_config("DEV_SMOKE", project_root=tmp_path)
+    layout = initialize_run(config)
+    checkpoint = layout.checkpoint_dir("fp8")
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "model.safetensors").write_bytes(b"packed")
+    unrelated = config.artifact_root / "run-unrelated"
+    unrelated.mkdir(parents=True)
+    (unrelated / "keep").write_text("safe")
+
+    assert reset_run(config, layout) > 0
+    assert not layout.run_dir.exists()
+    assert (unrelated / "keep").read_text() == "safe"
+
+
+def test_reset_run_refuses_mismatched_manifest(tmp_path: Path) -> None:
+    _recipes(tmp_path)
+    config = make_config("DEV_SMOKE", project_root=tmp_path)
+    layout = initialize_run(config)
+    layout.manifest_path.write_text('{"different": true}\n')
+    with pytest.raises(ValueError, match="does not match"):
+        reset_run(config, layout)
+    assert layout.run_dir.exists()
 
 
 def test_retryable_derived_json_write_is_idempotent(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""Auditable TensorRT-LLM AutoDeploy server lifecycle helpers."""
+"""Auditable TensorRT-LLM server lifecycle helpers."""
 
 from __future__ import annotations
 
@@ -126,17 +126,35 @@ def server_config_for_workshop(
     host: str = "127.0.0.1",
     port: int = 8000,
     environment: Mapping[str, str] | None = None,
+    precision: str = "bf16",
+    compute_capability: tuple[int, int] = (10, 0),
 ) -> TensorRTLLMServerConfig:
-    """Build the canonical profile-specific AutoDeploy launch contract."""
+    """Build the canonical hardware-specific TensorRT-LLM launch contract.
+
+    SM120 uses the native PyTorch backend because rc17's AutoDeploy
+    ``trtllm_gen`` FP4 path fails before readiness on RTX Blackwell.  The
+    native CUTEDSL policy selects FlashInfer B12x for NVFP4 and a documented
+    CUTLASS fallback for the other two precisions.  SM100/SM103 retain the
+    original AutoDeploy path used for the B200/B300 workshop.
+    """
 
     profile_name = getattr(workshop_config.profile.name, "value", workshop_config.profile.name)
-    yaml_name = "nano_v3_dev.yaml" if profile_name == "DEV_SMOKE" else "nano_v3_b200.yaml"
+    if precision not in {"bf16", "fp8", "nvfp4"}:
+        raise ValueError(f"Unknown precision: {precision}")
+    if compute_capability == (12, 0):
+        backend = "pytorch"
+        yaml_name = "nano_v3_native_sm120.yaml"
+    elif compute_capability[0] == 10:
+        backend = "_autodeploy"
+        yaml_name = "nano_v3_dev.yaml" if profile_name == "DEV_SMOKE" else "nano_v3_b200.yaml"
+    else:
+        raise ValueError(f"Unsupported Blackwell compute capability: {compute_capability}")
     config_path = Path(workshop_config.project_root) / "configs" / yaml_name
     return TensorRTLLMServerConfig(
         model=str(model_path or workshop_config.model_id),
         host=host,
         port=port,
-        backend="_autodeploy",
+        backend=backend,
         executable="/usr/local/bin/trtllm-serve",
         python_executable=sys.executable,
         config_path=config_path,
@@ -182,8 +200,8 @@ def request_json(
     return json.loads(raw) if raw else None
 
 
-class TensorRTLLMAutoDeployServer:
-    """Own one ``trtllm-serve --backend _autodeploy`` subprocess."""
+class TensorRTLLMServer:
+    """Own one TensorRT-LLM serving subprocess."""
 
     def __init__(
         self,
@@ -220,7 +238,7 @@ class TensorRTLLMAutoDeployServer:
         wait: bool = True,
         startup_timeout_s: float = 900.0,
         poll_interval_s: float = 1.0,
-    ) -> "TensorRTLLMAutoDeployServer":
+    ) -> "TensorRTLLMServer":
         if startup_timeout_s <= 0 or poll_interval_s <= 0:
             raise ValueError("startup timeout and polling interval must be positive")
         if self.is_running:
@@ -292,11 +310,16 @@ class TensorRTLLMAutoDeployServer:
             self._log_handle.close()
             self._log_handle = None
 
-    def __enter__(self) -> "TensorRTLLMAutoDeployServer":
+    def __enter__(self) -> "TensorRTLLMServer":
         return self.start()
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         self.stop()
+
+
+# Compatibility alias for downstream imports created before the SM120 native
+# runtime was added.
+TensorRTLLMAutoDeployServer = TensorRTLLMServer
 
 
 def save_server_manifest(
@@ -318,6 +341,10 @@ def save_server_manifest(
                 "base_url": config.base_url,
                 "environment_overrides": dict(config.environment),
                 "controlled_optimization_policy": {
+                    "runtime_backend": config.backend,
+                    "runtime_config": (
+                        None if config.config_path is None else str(config.config_path)
+                    ),
                     "prefix_cache_reuse": config.prefix_cache_reuse,
                     "speculative_decoding": config.speculative_decoding,
                     "kv_cache_dtype": config.kv_cache_dtype,
@@ -328,5 +355,4 @@ def save_server_manifest(
             sort_keys=True,
         )
         handle.write("\n")
-    return target
     return target

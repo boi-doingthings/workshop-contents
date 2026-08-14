@@ -31,7 +31,12 @@ TRTLLM_IMAGE = (
 )
 CALIBRATION_DATASET = "local-frozen-cnn-dailymail-jsonl"
 SEED = 42
-POST_PREP_MINIMUM_FREE_DISK_GIB = 55
+# Storage is checked for the operation that is about to run.  These are not
+# experiment inputs and deliberately do not change a run fingerprint.
+SOURCE_DOWNLOAD_MINIMUM_FREE_DISK_GIB = 70
+CACHED_PREPARATION_MINIMUM_FREE_DISK_GIB = 2
+FRESH_EXPORTS_MINIMUM_FREE_DISK_GIB = 55
+RESUME_RESULTS_MINIMUM_FREE_DISK_GIB = 2
 
 
 class ProfileName(str, Enum):
@@ -53,7 +58,7 @@ class Profile:
     benchmark_requests: int
     benchmark_warmup_requests: int
     benchmark_repetitions: int
-    minimum_free_disk_gib: int
+    initial_uncached_capacity_gib: int
 
     @property
     def model_id(self) -> str:
@@ -80,7 +85,7 @@ class Profile:
             "gsm8k_samples": self.gsm8k_samples,
             "benchmark_requests": self.benchmark_requests,
             "benchmark_repetitions": self.benchmark_repetitions,
-            "minimum_free_disk_gib": self.minimum_free_disk_gib,
+            "initial_uncached_capacity_gib": self.initial_uncached_capacity_gib,
         }
         for field_name, value in positive.items():
             if value <= 0:
@@ -100,7 +105,7 @@ PROFILES: dict[ProfileName, Profile] = {
         benchmark_requests=32,
         benchmark_warmup_requests=4,
         benchmark_repetitions=1,
-        minimum_free_disk_gib=145,
+        initial_uncached_capacity_gib=145,
     ),
     ProfileName.WORKSHOP_B200: Profile(
         name=ProfileName.WORKSHOP_B200,
@@ -112,7 +117,7 @@ PROFILES: dict[ProfileName, Profile] = {
         benchmark_requests=256,
         benchmark_warmup_requests=16,
         benchmark_repetitions=3,
-        minimum_free_disk_gib=145,
+        initial_uncached_capacity_gib=145,
     ),
     ProfileName.FULL: Profile(
         name=ProfileName.FULL,
@@ -124,7 +129,7 @@ PROFILES: dict[ProfileName, Profile] = {
         benchmark_requests=1_024,
         benchmark_warmup_requests=64,
         benchmark_repetitions=5,
-        minimum_free_disk_gib=145,
+        initial_uncached_capacity_gib=145,
     ),
 }
 
@@ -144,6 +149,20 @@ def get_profile(value: ProfileName | str) -> Profile:
     """Public profile lookup used by preparation scripts and notebooks."""
 
     return resolve_profile(value)
+
+
+def prepared_root_for_profile(
+    project_root: Path | str, profile: ProfileName | str
+) -> Path:
+    """Return the isolated frozen-input directory for one workload profile."""
+
+    resolved = resolve_profile(profile)
+    return (
+        Path(project_root).expanduser().resolve()
+        / "artifacts"
+        / "prepared"
+        / resolved.name.value.lower()
+    )
 
 
 @dataclass(frozen=True)
@@ -186,6 +205,12 @@ class WorkshopConfig:
 
         profile_data = asdict(self.profile)
         profile_data["name"] = self.profile.name.value
+        # Preserve the established experiment fingerprint while clarifying
+        # that 145 GiB was an initial uncached capacity estimate, not a rerun
+        # gate. Operational storage budgets are intentionally excluded.
+        profile_data["minimum_free_disk_gib"] = profile_data.pop(
+            "initial_uncached_capacity_gib"
+        )
         return {
             "schema_version": 1,
             "profile": profile_data,

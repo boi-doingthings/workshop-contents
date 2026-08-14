@@ -17,6 +17,7 @@ from .config import (
     MODELOPT_EXAMPLE,
     MODELOPT_GIT_COMMIT,
     MODELOPT_VERSION,
+    RESUME_RESULTS_MINIMUM_FREE_DISK_GIB,
     TRTLLM_IMAGE,
     TRTLLM_VERSION,
     WorkshopConfig,
@@ -245,7 +246,7 @@ def run_preflight(
         )
     )
     disk_requirement = (
-        config.profile.minimum_free_disk_gib
+        RESUME_RESULTS_MINIMUM_FREE_DISK_GIB
         if minimum_free_disk_gib is None
         else minimum_free_disk_gib
     )
@@ -435,6 +436,7 @@ def write_preflight_manifest(
     report: PreflightReport,
     *,
     prepared_manifest: Mapping[str, Any] | None = None,
+    storage_plan: Mapping[str, Any] | None = None,
 ) -> Path:
     """Persist the environment audit without ever serializing credentials."""
 
@@ -444,6 +446,7 @@ def write_preflight_manifest(
             "configuration": config.fingerprint_payload(),
             "container_image": os.environ.get("PTQ_IMAGE", TRTLLM_IMAGE),
             "prepared_assets": dict(prepared_manifest or {}),
+            "storage_plan": dict(storage_plan or {}),
         }
     )
     pip_freeze = config.project_root / "pip-freeze.txt"
@@ -457,4 +460,6 @@ def write_preflight_manifest(
             if line.strip()
         ],
     }
-    return write_json_atomic(path, payload)
+    # Environment and free-space observations are intentionally refreshed on
+    # an instructor rerun; the immutable experiment contract lives separately.
+    return write_json_atomic(path, payload, overwrite=True)

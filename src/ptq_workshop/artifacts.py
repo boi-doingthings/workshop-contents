@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -141,6 +142,41 @@ def build_manifest(config: WorkshopConfig, layout: ArtifactLayout) -> dict[str, 
         "configuration": config.fingerprint_payload(),
         "recipe_sha256": recipe_digests(config),
     }
+
+
+def reset_run(config: WorkshopConfig, layout: ArtifactLayout) -> int:
+    """Delete one explicitly selected, matching run and return reclaimed blocks.
+
+    This is intentionally whole-run replacement.  Keeping old checkpoints while
+    overwriting only predictions or metrics can create a mixed-provenance demo.
+    """
+
+    artifact_root = config.artifact_root.expanduser().resolve()
+    run_dir = layout.run_dir.expanduser()
+    if run_dir.is_symlink():
+        raise ValueError(f"Refusing to reset symlinked run directory: {run_dir}")
+    if run_dir.parent.resolve() != artifact_root:
+        raise ValueError(f"Run directory must be directly under {artifact_root}: {run_dir}")
+    if not run_dir.exists():
+        return 0
+    from .storage import allocated_bytes
+
+    children = list(run_dir.iterdir())
+    if layout.manifest_path.is_file():
+        try:
+            existing = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            raise ValueError(f"Refusing to reset invalid manifest: {layout.manifest_path}") from exc
+        expected = build_manifest(config, layout)
+        if existing != expected:
+            raise ValueError(
+                f"Refusing to reset run whose manifest does not match the selected experiment: {run_dir}"
+            )
+    elif children:
+        raise ValueError(f"Refusing to reset nonempty run without a manifest: {run_dir}")
+    reclaimable = allocated_bytes(run_dir)
+    shutil.rmtree(run_dir)
+    return reclaimable
 
 
 def write_json_atomic(path: Path | str, payload: Any, *, overwrite: bool = False) -> Path:

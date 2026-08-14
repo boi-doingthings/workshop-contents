@@ -39,6 +39,12 @@ def _patch_runtime_dependencies(module, monkeypatch) -> None:
     monkeypatch.setattr(module, "write_accuracy_acceptance", lambda *args, **kwargs: None)
 
 
+def _write_environment(layout: ArtifactLayout, capability=(12, 0)) -> None:
+    path = layout.run_dir / "manifests" / "environment.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"gpus": [{"compute_capability": capability}]}))
+
+
 def _load_run_profile():
     path = Path(__file__).resolve().parents[1] / "scripts" / "run_profile.py"
     spec = importlib.util.spec_from_file_location("run_profile_under_test", path)
@@ -46,6 +52,54 @@ def _load_run_profile():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _prepared_manifest(config, tmp_path: Path) -> dict:
+    entries = {}
+    for name, count in (
+        ("calibration", config.profile.calibration_samples),
+        ("mmlu_pro", config.profile.mmlu_samples),
+        ("gsm8k", config.profile.gsm8k_samples),
+    ):
+        path = tmp_path / f"{name}.jsonl"
+        rows = [{"id": f"{name}-{index}"} for index in range(count)]
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        from ptq_workshop.io import sha256_json
+
+        entries[name] = {"path": str(path), "count": count, "sha256": sha256_json(rows)}
+    return {
+        "download_only": True,
+        "profile": config.profile.name.value,
+        "model_id": config.model_id,
+        "model_revision": config.model_revision,
+        "model_snapshot": str(tmp_path / "snapshot"),
+        "snapshot_verification": {"verified": True, "weight_bytes": 123},
+        "calibration": entries["calibration"],
+        "evaluation": {"mmlu_pro": entries["mmlu_pro"], "gsm8k": entries["gsm8k"]},
+    }
+
+
+def test_prepared_assets_reject_cross_profile_reuse(tmp_path: Path) -> None:
+    module = _load_run_profile()
+    config = module.make_config("DEV_SMOKE", project_root=tmp_path)
+    manifest = _prepared_manifest(config, tmp_path)
+    manifest["profile"] = "WORKSHOP_B200"
+    path = tmp_path / "prepared.json"
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="Prepared manifest profile"):
+        module.load_prepared(path, config)
+
+
+def test_prepared_assets_reject_wrong_profile_counts(tmp_path: Path, monkeypatch) -> None:
+    module = _load_run_profile()
+    config = module.make_config("DEV_SMOKE", project_root=tmp_path)
+    manifest = _prepared_manifest(config, tmp_path)
+    manifest["calibration"]["count"] -= 1
+    path = tmp_path / "prepared.json"
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(module, "verify_snapshot", lambda *args: {"weight_bytes": 123})
+    with pytest.raises(ValueError, match="count changed"):
+        module.load_prepared(path, config)
 
 
 def test_checkpoint_validation_honors_selected_precision(tmp_path: Path, monkeypatch) -> None:
@@ -138,6 +192,7 @@ def test_runtime_startup_failure_is_persisted_and_reraised(
     module = _load_run_profile()
     _patch_runtime_dependencies(module, monkeypatch)
     layout = ArtifactLayout(tmp_path / "runs", "4" * 16)
+    _write_environment(layout)
 
     class FailingServer:
         log_path = None
@@ -151,7 +206,7 @@ def test_runtime_startup_failure_is_persisted_and_reraised(
         def stop(self):
             pass
 
-    monkeypatch.setattr(module, "TensorRTLLMAutoDeployServer", FailingServer)
+    monkeypatch.setattr(module, "TensorRTLLMServer", FailingServer)
     with pytest.raises(LookupError, match="wrong stack"):
         module.run_runtime(
             source=tmp_path / "source",
@@ -180,6 +235,7 @@ def test_runtime_smoke_failure_records_observed_text(tmp_path: Path, monkeypatch
     module = _load_run_profile()
     _patch_runtime_dependencies(module, monkeypatch)
     layout = ArtifactLayout(tmp_path / "runs", "5" * 16)
+    _write_environment(layout)
 
     class RunningServer:
         process = SimpleNamespace(pid=123)
@@ -193,7 +249,7 @@ def test_runtime_smoke_failure_records_observed_text(tmp_path: Path, monkeypatch
         def stop(self):
             pass
 
-    monkeypatch.setattr(module, "TensorRTLLMAutoDeployServer", RunningServer)
+    monkeypatch.setattr(module, "TensorRTLLMServer", RunningServer)
     monkeypatch.setattr(
         module,
         "request_json",
@@ -225,6 +281,7 @@ def test_runtime_success_records_available_only_after_exact_smoke(
     module = _load_run_profile()
     _patch_runtime_dependencies(module, monkeypatch)
     layout = ArtifactLayout(tmp_path / "runs", "6" * 16)
+    _write_environment(layout)
 
     class RunningServer:
         process = SimpleNamespace(pid=123)
@@ -238,7 +295,7 @@ def test_runtime_success_records_available_only_after_exact_smoke(
         def stop(self):
             pass
 
-    monkeypatch.setattr(module, "TensorRTLLMAutoDeployServer", RunningServer)
+    monkeypatch.setattr(module, "TensorRTLLMServer", RunningServer)
     monkeypatch.setattr(
         module,
         "request_json",

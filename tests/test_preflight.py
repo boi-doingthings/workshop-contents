@@ -36,9 +36,9 @@ def test_b300_gpu_audit_row_is_supported() -> None:
     assert is_supported_compute_capability(gpu.compute_capability)
 
 
-def test_disk_gate_is_inclusive_and_all_profiles_require_145_gib(tmp_path: Path) -> None:
+def test_disk_check_is_inclusive_and_145_is_only_an_uncached_capacity_hint(tmp_path: Path) -> None:
     usage = lambda _: _ntuple_diskusage(200 * GIB, 55 * GIB, 145 * GIB)
     assert disk_space_check(tmp_path, 145, usage=usage).passed
     assert not disk_space_check(tmp_path, 146, usage=usage).passed
     for name in ("DEV_SMOKE", "WORKSHOP_B200", "FULL"):
-        assert get_profile(name).minimum_free_disk_gib == 145
+        assert get_profile(name).initial_uncached_capacity_gib == 145

@@ -19,10 +19,12 @@ from transformers import AutoTokenizer
 from ptq_workshop.artifacts import (
     ArtifactLayout,
     initialize_run,
+    reset_run,
     require_checkpoint_validation,
     write_derived_json_atomic,
     write_json_atomic,
 )
+from ptq_workshop.assets import verify_snapshot
 from ptq_workshop.benchmark import (
     canonical_performance_scenarios,
     energy_per_output_token,
@@ -32,7 +34,11 @@ from ptq_workshop.benchmark import (
     write_benchmark_result,
 )
 from ptq_workshop.checkpoint_analysis import analyze_packed_checkpoint
-from ptq_workshop.config import POST_PREP_MINIMUM_FREE_DISK_GIB, ProfileName, make_config
+from ptq_workshop.config import (
+    ProfileName,
+    make_config,
+    prepared_root_for_profile,
+)
 from ptq_workshop.evaluate import (
     prepare_eval_manifest,
     bootstrap_accuracy_delta_ci,
@@ -52,12 +58,13 @@ from ptq_workshop.quantize import (
 from ptq_workshop.reporting import create_dashboard
 from ptq_workshop.serving import (
     SMOKE_RESPONSE_SENTINEL,
-    TensorRTLLMAutoDeployServer,
+    TensorRTLLMServer,
     require_exact_smoke_response,
     request_json,
     save_server_manifest,
     server_config_for_workshop,
 )
+from ptq_workshop.storage import plan_run_storage
 from ptq_workshop.telemetry import (
     NVMLSampler,
     validate_compute_process_ownership,
@@ -85,6 +92,7 @@ def load_prepared(path: Path, config: Any) -> dict[str, Any]:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "download_only": True,
+        "profile": config.profile.name.value,
         "model_id": config.model_id,
         "model_revision": config.model_revision,
     }
@@ -93,30 +101,15 @@ def load_prepared(path: Path, config: Any) -> dict[str, Any]:
             raise ValueError(
                 f"Prepared manifest {key}={manifest.get(key)!r}; expected {expected!r}"
             )
-    preparation_preflight = manifest.get("preparation_preflight", {})
-    recorded_preflight = (
-        preparation_preflight.get("passed") is True
-        and preparation_preflight.get("profile") == config.profile.name.value
-        and preparation_preflight.get("model_id") == config.model_id
-        and preparation_preflight.get("model_revision") == config.model_revision
-        and int(preparation_preflight.get("minimum_free_disk_gib", 0))
-        == config.profile.minimum_free_disk_gib
-    )
-    recovery = manifest.get("recovery") or {}
-    recovered_complete_cache = (
-        recovery.get("recovered_complete_cache") is True
-        and recovery.get("historical_145_gib_gate_recorded") is False
-        and int(recovery.get("remaining_artifact_budget_gib", 0))
-        == POST_PREP_MINIMUM_FREE_DISK_GIB
-        and recovery.get("snapshot_verification", {}).get("verified") is True
-    )
-    if not recorded_preflight and not recovered_complete_cache:
-        raise ValueError(
-            "Prepared assets prove neither the 145 GiB pre-download gate nor the "
-            "verified-complete-cache plus 55 GiB recovery path"
-        )
     if manifest.get("snapshot_verification", {}).get("verified") is not True:
         raise ValueError("Prepared manifest lacks a successful pinned-snapshot verification")
+    snapshot_proof = verify_snapshot(
+        Path(manifest["model_snapshot"]), config.model_id, config.model_revision
+    )
+    if snapshot_proof["weight_bytes"] != int(
+        manifest["snapshot_verification"].get("weight_bytes", -1)
+    ):
+        raise ValueError("Prepared pinned-snapshot footprint has changed")
     frozen_files = {
         "calibration": manifest["calibration"],
         "mmlu_pro": manifest["evaluation"]["mmlu_pro"],
@@ -132,6 +125,17 @@ def load_prepared(path: Path, config: Any) -> dict[str, Any]:
             )
         if len(rows) != int(entry["count"]):
             raise ValueError(f"Prepared {name} count changed at {frozen_path}")
+    expected_counts = {
+        "calibration": config.profile.calibration_samples,
+        "mmlu_pro": config.profile.mmlu_samples,
+        "gsm8k": config.profile.gsm8k_samples,
+    }
+    for name, expected_count in expected_counts.items():
+        if int(frozen_files[name]["count"]) != expected_count:
+            raise ValueError(
+                f"Prepared {name} count is {frozen_files[name]['count']}; "
+                f"profile {config.profile.name.value} requires {expected_count}"
+            )
     return manifest
 
 
@@ -534,6 +538,16 @@ def run_runtime(
     task_filter: str = "all",
     scenario_filter: str = "all",
 ) -> None:
+    environment_path = layout.run_dir / "manifests" / "environment.json"
+    if not environment_path.is_file():
+        raise FileNotFoundError(
+            f"A successful preflight environment manifest is required: {environment_path}"
+        )
+    environment_manifest = json.loads(environment_path.read_text(encoding="utf-8"))
+    gpu_rows = environment_manifest.get("gpus", [])
+    if len(gpu_rows) != 1:
+        raise ValueError("Runtime requires exactly one GPU recorded by preflight")
+    compute_capability = tuple(int(value) for value in gpu_rows[0]["compute_capability"])
     examples = evaluation_examples(prepared, layout, config) if do_evaluate else {}
     if task_filter != "all":
         if task_filter not in examples:
@@ -573,6 +587,8 @@ def run_runtime(
             config,
             model_path=model_path,
             port=8000 + port_offset,
+            precision=variant,
+            compute_capability=compute_capability,
         )
         # Absence of KV quantizers in both recipes plus auto runtime selection keeps
         # the source and exported variants on the same BF16 KV-cache path.
@@ -580,7 +596,7 @@ def run_runtime(
             server_config,
             server_manifest_path,
         )
-        server = TensorRTLLMAutoDeployServer(
+        server = TensorRTLLMServer(
             server_config,
             log_path=server_log_path,
         )
@@ -741,7 +757,12 @@ def main() -> None:
         default="all",
     )
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--prepared-root", type=Path, default=PROJECT_ROOT / "artifacts" / "prepared")
+    parser.add_argument(
+        "--overwrite-run",
+        action="store_true",
+        help="Reset exactly this matching run once before preflight/all; preserves unrelated runs",
+    )
+    parser.add_argument("--prepared-root", type=Path)
     parser.add_argument(
         "--modelopt-root",
         type=Path,
@@ -750,6 +771,9 @@ def main() -> None:
     args = parser.parse_args()
     config = make_config(args.profile, project_root=PROJECT_ROOT)
     layout = layout_for_args(config, args.run_dir, args.stage)
+    args.prepared_root = args.prepared_root or prepared_root_for_profile(
+        PROJECT_ROOT, config.profile.name
+    )
     if args.dry_run:
         print(
             json.dumps(
@@ -761,12 +785,38 @@ def main() -> None:
                     "precision": args.precision,
                     "task": args.task,
                     "scenario": args.scenario,
+                    "overwrite_run": args.overwrite_run,
                     "mutations": [],
                 },
                 indent=2,
             )
         )
         return
+    if args.overwrite_run and args.stage not in {"preflight", "all"}:
+        raise ValueError("--overwrite-run is allowed only with --stage preflight or --stage all")
+    storage_plan = plan_run_storage(
+        layout,
+        stage=args.stage,
+        precision=args.precision,
+        overwrite_run=args.overwrite_run,
+    )
+    if not storage_plan.passed:
+        raise RuntimeError(
+            "Storage plan failed without deleting anything: "
+            f"{storage_plan.as_dict()['detail']}"
+        )
+    if args.overwrite_run:
+        reset_run(config, layout)
+        storage_plan = plan_run_storage(
+            layout,
+            stage=args.stage,
+            precision=args.precision,
+            overwrite_run=False,
+        )
+        if not storage_plan.passed:
+            raise RuntimeError(
+                f"Storage check failed after selected-run reset: {storage_plan.as_dict()['detail']}"
+            )
     ensure_layout(config, layout)
 
     if args.stage in {"preflight", "all"}:
@@ -776,28 +826,24 @@ def main() -> None:
             if optional_prepared_path.is_file()
             else None
         )
-        disk_budget = (
-            POST_PREP_MINIMUM_FREE_DISK_GIB
-            if optional_prepared is not None
-            else config.profile.minimum_free_disk_gib
-        )
         report = preflight_or_raise(
             config,
             modelopt_root=args.modelopt_root,
-            minimum_free_disk_gib=disk_budget,
+            minimum_free_disk_gib=storage_plan.required_free_gib,
         )
         write_preflight_manifest(
             layout.run_dir / "manifests" / "environment.json",
             config,
             report,
             prepared_manifest=optional_prepared,
+            storage_plan=storage_plan.as_dict(),
         )
     if args.stage == "preflight":
         print(json.dumps({"run_dir": str(layout.run_dir), "stage": args.stage}, indent=2))
         return
     prepared = load_prepared(args.prepared_root / "prepared_manifest.json", config)
     source = Path(prepared["model_snapshot"]).expanduser().resolve()
-    write_json_atomic(layout.run_dir / "manifests" / "prepared-assets.json", prepared)
+    write_derived_json_atomic(layout.run_dir / "manifests" / "prepared-assets.json", prepared)
     if args.stage in {"quantize", "all"}:
         variants = ("fp8", "nvfp4") if args.precision == "all" else (args.precision,)
         if "bf16" in variants:
@@ -813,7 +859,7 @@ def main() -> None:
             )
             run_quantization_with_observability(
                 job,
-                allow_existing_valid_export=config.profile.name is ProfileName.DEV_SMOKE,
+                allow_existing_valid_export=True,
             )
     if args.stage in {"validate", "all"}:
         validation_variants = (
