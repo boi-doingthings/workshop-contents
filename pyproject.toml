@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools==79.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackwell-ptq-workshop"
+version = "0.1.0"
+description = "Reproducible BF16, FP8, and NVFP4 post-training quantization workshop on NVIDIA Blackwell"
+requires-python = ">=3.10,<3.15"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest==8.4.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+pythonpath = ["src"]
+testpaths = ["tests"]

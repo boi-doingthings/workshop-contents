@@ -1,0 +1,57 @@
+# TensorRT-LLM v1.3.0rc23 AutoDeploy configuration for RTX Blackwell SM120.
+#
+# The default fused RMSNorm/ReLU2-to-NVFP4 activation kernels are not suitable
+# for this Nemotron-3-Nano SM120 path: RMSNorm rejects an activation shape and
+# ReLU2 causes a deterministic accuracy regression. Keep real packed NVFP4
+# GEMM/MoE kernels enabled, but leave those pointwise-to-quant fusions unfused.
+max_batch_size: 32
+max_seq_len: 8192
+enable_chunked_prefill: true
+attn_backend: trtllm
+cuda_graph_config:
+  batch_sizes: [1, 2, 4, 8, 16, 32]
+kv_cache_config:
+  free_gpu_memory_fraction: 0.82
+  enable_block_reuse: false
+  enable_partial_reuse: false
+transforms:
+  apply_sharding_hints:
+    shard_layers: ['mha', 'moe', 'mlp']
+  detect_sharding:
+    allreduce_strategy: SYMM_MEM
+    sharding_dims: ['ep', 'bmm']
+    sharding_source: ['manual']
+    manual_config:
+      head_dim: 128
+      tp_plan:
+        "in_proj": "mamba"
+        "out_proj": "rowwise"
+        "q_proj": "colwise"
+        "k_proj": "colwise"
+        "v_proj": "colwise"
+        "o_proj": "rowwise"
+        "up_proj": "colwise"
+        "down_proj": "rowwise"
+        "fc1_latent_proj": "gather"
+        "fc2_latent_proj": "gather"
+  multi_stream_moe:
+    enabled: true
+  gather_logits_before_lm_head:
+    enabled: true
+  fuse_mamba_a_log:
+    stage: post_load_fusion
+    enabled: true
+  insert_cached_ssm_attention:
+    backend: flashinfer_ssm
+  compile_model:
+    piecewise_enabled: true
+  fuse_nvfp4_moe:
+    # trtllm_gen's batched FP4 MoE runner rejects gpuSM 120 in rc23.
+    # CUTLASS is the supported real-NVFP4 fallback for RTX Blackwell.
+    backend: cutlass
+  fuse_rmsnorm_quant_nvfp4:
+    enabled: false
+  fuse_relu2_quant_nvfp4:
+    enabled: false
+  mlir_elementwise_fusion:
+    enabled: true
