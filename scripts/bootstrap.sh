@@ -26,6 +26,7 @@ source .venv/bin/activate
 # visible beside the image system ModelOpt distribution and can mix modules
 # across releases (observed as a config_loader import failure).
 python -m pip install --no-deps --force-reinstall "${MODELOPT_DIR}"
+python -m pip install "pytest==8.4.1"
 python -m pip install --no-deps -e .
 python -m ipykernel install --user --name blackwell-ptq --display-name "Blackwell PTQ (pinned)"
 python -m pip freeze | sort > pip-freeze.txt
@@ -45,9 +46,9 @@ assert is_supported_compute_capability(capability), (
     "requires B200/B300/GB200/GB300 10.x or RTX Blackwell 12.0"
 )
 assert transformers.__version__ == "5.5.4"
-assert tensorrt_llm.__version__ == "1.3.0rc17"
+assert tensorrt_llm.__version__ == "1.3.0rc23"
 assert datasets.__version__ == "3.1.0"
-assert huggingface_hub.__version__ == "1.17.0"
+assert huggingface_hub.__version__ == "1.14.0"
 assert setuptools.__version__ == "79.0.1"
 assert modelopt.__version__ == "0.46.0rc0"
 venv_site = "/workspace/.venv/lib/python3.12/site-packages/modelopt/"

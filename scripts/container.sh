@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${PTQ_IMAGE:-nvcr.io/nvidia/tensorrt-llm/release@sha256:998068efffcddb06905b83e9e712a4aec9f39d8f1ec4afacf6c0f3bac4479b54}"
+IMAGE="${PTQ_IMAGE:-nvcr.io/nvidia/tensorrt-llm/release@sha256:316b840a08a8174fc3f6b5716828bdfe1daaf629ee1ac2a8b7a22526d141a007}"
 GPU_ID="${PTQ_GPU_ID:-0}"
 HF_CACHE="${HF_HOME:-${PROJECT_DIR}/.cache/huggingface}"
 mkdir -p "${HF_CACHE}" "${PROJECT_DIR}/artifacts" "${PROJECT_DIR}/.cache/home" "${PROJECT_DIR}/.cache/torchinductor"

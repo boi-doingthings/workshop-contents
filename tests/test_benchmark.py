@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from ptq_workshop.benchmark import (
     CVRetryPolicy,
@@ -163,7 +164,7 @@ def test_workshop_server_config_selects_profile_yaml_and_revision(tmp_path):
     assert config.speculative_decoding is False
 
 
-def test_rtx_blackwell_uses_autodeploy_then_native_nvfp4_fallback(tmp_path):
+def test_rtx_blackwell_uses_autodeploy_with_sm120_kernel_policy(tmp_path):
     workshop = SimpleNamespace(
         project_root=tmp_path,
         model_id="nvidia/model",
@@ -176,16 +177,21 @@ def test_rtx_blackwell_uses_autodeploy_then_native_nvfp4_fallback(tmp_path):
         )
         for precision in ("bf16", "fp8", "nvfp4")
     ]
-    assert [config.backend for config in configs] == [
-        "_autodeploy",
-        "_autodeploy",
-        "pytorch",
-    ]
+    assert [config.backend for config in configs] == ["_autodeploy"] * 3
     assert [Path(config.config_path).name for config in configs] == [
-        "nano_v3_dev.yaml",
-        "nano_v3_dev.yaml",
-        "nano_v3_native_sm120.yaml",
-    ]
+        "nano_v3_sm120.yaml"
+    ] * 3
+
+
+def test_blackwell_nvfp4_moe_backends_are_hardware_specific():
+    config_dir = Path(__file__).resolve().parents[1] / "configs"
+    sm120 = yaml.safe_load((config_dir / "nano_v3_sm120.yaml").read_text())
+    assert sm120["transforms"]["fuse_nvfp4_moe"]["backend"] == "cutlass"
+    assert sm120["transforms"]["fuse_rmsnorm_quant_nvfp4"]["enabled"] is False
+    assert sm120["transforms"]["fuse_relu2_quant_nvfp4"]["enabled"] is False
+    for name in ("nano_v3_dev.yaml", "nano_v3_b200.yaml"):
+        config = yaml.safe_load((config_dir / name).read_text())
+        assert config["transforms"]["fuse_nvfp4_moe"]["backend"] == "trtllm_gen"
 
 
 def test_server_manifest_records_controlled_optimization_policy(tmp_path):

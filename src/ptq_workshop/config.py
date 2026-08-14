@@ -24,10 +24,10 @@ MODELOPT_SOURCE_TAG = "0.46.0rc0"
 MODELOPT_GIT_COMMIT = "33d05b0c446f528914173041057050f6d135fbf4"
 MODELOPT_NEMOTRON_EXPORT_FIX_COMMIT = "c81210faecc096a7bd802cca2cda909ac43f7759"
 MODELOPT_EXAMPLE = Path("examples/hf_ptq/hf_ptq.py")
-TRTLLM_VERSION = "1.3.0rc17"
+TRTLLM_VERSION = "1.3.0rc23"
 TRTLLM_IMAGE = (
     "nvcr.io/nvidia/tensorrt-llm/release@"
-    "sha256:998068efffcddb06905b83e9e712a4aec9f39d8f1ec4afacf6c0f3bac4479b54"
+    "sha256:316b840a08a8174fc3f6b5716828bdfe1daaf629ee1ac2a8b7a22526d141a007"
 )
 CALIBRATION_DATASET = "local-frozen-cnn-dailymail-jsonl"
 SEED = 42

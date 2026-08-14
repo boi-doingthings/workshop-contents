@@ -1,4 +1,4 @@
-# Derived from TensorRT-LLM v1.3.0rc17
+# Derived from TensorRT-LLM v1.3.0rc23
 # examples/auto_deploy/model_registry/configs/nano_v3.yaml.
 max_batch_size: 64
 max_seq_len: 16384
@@ -11,6 +11,8 @@ kv_cache_config:
   enable_block_reuse: false
   enable_partial_reuse: false
 transforms:
+  apply_sharding_hints:
+    shard_layers: ['mha', 'moe', 'mlp']
   detect_sharding:
     allreduce_strategy: SYMM_MEM
     sharding_dims: ['ep', 'bmm']

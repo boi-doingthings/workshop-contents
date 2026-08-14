@@ -11,8 +11,8 @@ and reload through the same TensorRT-LLM runtime.
 ## What is pinned
 
 - Model revision: `2d59de1cbd51c0adf384eb906b766d1aee0e0517`
-- TensorRT-LLM: `1.3.0rc17`, image digest
-  `sha256:998068efffcddb06905b83e9e712a4aec9f39d8f1ec4afacf6c0f3bac4479b54`
+- TensorRT-LLM: `1.3.0rc23`, image digest
+  `sha256:316b840a08a8174fc3f6b5716828bdfe1daaf629ee1ac2a8b7a22526d141a007`
 - NVIDIA Model Optimizer: official tag `0.46.0rc0`, commit
   `33d05b0c446f528914173041057050f6d135fbf4`
 - Calibration corpus: deterministic, hashed CNN/DailyMail rows
@@ -186,14 +186,15 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
   data.
 - **PTQ OOM:** `DEV_SMOKE` may retry the documented ModelOpt low-memory path when compatible.
   Workshop dimensions and formats are never silently changed.
-- **No NVFP4 performance:** inspect the saved runtime-status JSON and linked server log. On RTX PRO
-  6000 (SM120), BF16 and FP8 stay on the validated AutoDeploy path; NVFP4 alone uses native PyTorch
-  with CUTLASS because rc17 AutoDeploy fails before readiness for FP4. The B12x path is not used
-  because this model's 1,856-wide experts are not a multiple of its 128-value tile. In the validated
-  rc17/SM120 run, CUTLASS loaded the packed checkpoint but generated only `<unk>` tokens; the smoke
-  artifact repeats the request with special-token filtering disabled so this is visible. B200/B300
-  use AutoDeploy for all precisions. A valid export is retained, but fake-quant timing is never
-  substituted for a missing native kernel or used to claim a cross-backend speedup.
+- **NVFP4 startup fails:** inspect the saved runtime-status JSON and linked server log. All Blackwell
+  targets use AutoDeploy with real packed NVFP4 checkpoints. B200/B300 use the `trtllm_gen` MoE
+  kernel from the normal Nano-v3 configuration. RTX PRO 6000 (SM120) uses the dedicated
+  `nano_v3_sm120.yaml`: its MoE stays real NVFP4 through CUTLASS because rc23's `trtllm_gen`
+  batched-MoE runner rejects SM120. The fused RMSNorm quantizer rejects this model's activation
+  shape, and the fused ReLU² quantizer is disabled because its controlled diagnostic exceeded the
+  five-point accuracy-regression guard. The underlying NVFP4 linear and MoE operations remain quantized.
+  The exact-generation gate prevents benchmark or accuracy numbers from being reported if this
+  hardware-specific route ever regresses.
 - **Hub throttling:** export `HF_TOKEN`; manifests record only a Boolean indicating its presence.
 
 ## Primary references
@@ -202,8 +203,9 @@ but suppress stale accuracy, performance, and telemetry for an unavailable runti
 - [ModelOpt quantization guide](https://nvidia.github.io/Model-Optimizer/guides/1_quantization.html)
 - [Unified Hugging Face checkpoint deployment](https://nvidia.github.io/Model-Optimizer/deployment/3_unified_hf.html)
 - [TensorRT-LLM quantization support](https://nvidia.github.io/TensorRT-LLM/latest/features/quantization.html)
-- [TensorRT-LLM 1.3.0rc17 release notes](https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v1.3.0rc17)
+- [TensorRT-LLM 1.3.0rc23 release notes](https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v1.3.0rc23)
+- [TensorRT-LLM Nemotron-3 deployment guide](https://nvidia.github.io/TensorRT-LLM/latest/deployment-guide/deployment-guide-for-nemotron-3-on-trtllm.html)
 - [TensorRT-LLM SM120/SM121 NVFP4 MoE implementation](https://github.com/NVIDIA/TensorRT-LLM/pull/13773)
-- [TensorRT-LLM benchmarking](https://nvidia.github.io/TensorRT-LLM/1.3.0rc21/commands/trtllm-bench.html)
+- [TensorRT-LLM benchmarking](https://nvidia.github.io/TensorRT-LLM/1.3.0rc23/commands/trtllm-bench.html)
 - [NVIDIA NVFP4 format](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/nvfp4/nvfp4.html)
 - [NVIDIA CUDA GPU compute capability table](https://developer.nvidia.com/cuda/gpus)

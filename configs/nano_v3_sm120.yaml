@@ -1,5 +1,9 @@
-# Derived from TensorRT-LLM v1.3.0rc23
-# examples/auto_deploy/model_registry/configs/nano_v3.yaml.
+# TensorRT-LLM v1.3.0rc23 AutoDeploy configuration for RTX Blackwell SM120.
+#
+# The default fused RMSNorm/ReLU2-to-NVFP4 activation kernels are not suitable
+# for this Nemotron-3-Nano SM120 path: RMSNorm rejects an activation shape and
+# ReLU2 causes a deterministic accuracy regression. Keep real packed NVFP4
+# GEMM/MoE kernels enabled, but leave those pointwise-to-quant fusions unfused.
 max_batch_size: 32
 max_seq_len: 8192
 enable_chunked_prefill: true
@@ -42,6 +46,12 @@ transforms:
   compile_model:
     piecewise_enabled: true
   fuse_nvfp4_moe:
-    backend: trtllm_gen
+    # trtllm_gen's batched FP4 MoE runner rejects gpuSM 120 in rc23.
+    # CUTLASS is the supported real-NVFP4 fallback for RTX Blackwell.
+    backend: cutlass
+  fuse_rmsnorm_quant_nvfp4:
+    enabled: false
+  fuse_relu2_quant_nvfp4:
+    enabled: false
   mlir_elementwise_fusion:
     enabled: true
